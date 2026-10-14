@@ -47,6 +47,13 @@ try:
     r = call("/luanti/sync", {"events": []})
     assert r["fallout_player"]["x"] == 12
 
+    # Luanti sends an empty Lua table as null or {} instead of [] - must not crash
+    for empty in (None, {}, []):
+        r = call("/luanti/sync", {"events": empty, "player": {"x": 1, "y": 2, "z": 3}})
+        assert r["ok"], r
+    r = call("/luanti/sync", {"player": {"x": 1, "y": 2, "z": 3}})  # no events key at all
+    assert r["ok"], r
+
     s = call("/status")
     assert s["fallout_connected"] and s["luanti_connected"]
     print("ALL BRIDGE TESTS PASSED")

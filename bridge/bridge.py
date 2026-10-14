@@ -21,6 +21,7 @@ import argparse
 import json
 import threading
 import time
+import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -96,6 +97,13 @@ class Handler(BaseHTTPRequestHandler):
 
     # ------------------------------------------------------------------ GET
     def do_GET(self):
+        try:
+            self._handle_get()
+        except Exception as e:
+            traceback.print_exc()
+            self._json(500, {"error": f"{type(e).__name__}: {e}"})
+
+    def _handle_get(self):
         url = urlparse(self.path)
         s = STATE
 
@@ -133,10 +141,17 @@ class Handler(BaseHTTPRequestHandler):
 
     # ----------------------------------------------------------------- POST
     def do_POST(self):
+        try:
+            self._handle_post()
+        except Exception as e:  # never hang up silently: report the error
+            traceback.print_exc()
+            self._json(500, {"error": f"{type(e).__name__}: {e}"})
+
+    def _handle_post(self):
         url = urlparse(self.path)
         data = self._read_json()
-        if data is None:
-            return self._json(400, {"error": "bad json"})
+        if not isinstance(data, dict):
+            return self._json(400, {"error": "expected a JSON object"})
         s = STATE
 
         if url.path == "/fallout/state":
@@ -168,14 +183,20 @@ class Handler(BaseHTTPRequestHandler):
             #  "player":{"x":..,"y":..,"z":..}}
             with s.lock:
                 s.luanti_seen = time.time()
-                for ev in data.get("events", []):
-                    if ev.get("type") in ("place", "dig") and "pos" in ev:
+                # Luanti serialises an empty Lua table as null or {} rather than [].
+                events = data.get("events")
+                if not isinstance(events, list):
+                    events = []
+                for ev in events:
+                    if not isinstance(ev, dict):
+                        continue
+                    if ev.get("type") in ("place", "dig") and isinstance(ev.get("pos"), dict):
                         s.add_event({
                             "type": ev["type"],
                             "pos": {k: float(ev["pos"][k]) for k in ("x", "y", "z")},
                             "node": ev.get("node", ""),
                         })
-                if "player" in data:
+                if isinstance(data.get("player"), dict):
                     s.luanti_player = data["player"]
                 reply = {"ok": True, "fallout_player": None}
                 if s.fallout_player and s.fallout_anchor and time.time() - s.fallout_seen < 3:
