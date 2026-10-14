@@ -1,0 +1,5 @@
+__pycache__/
+f4se_plugin/build/
+f4se_plugin/.xmake/
+f4se_plugin/lib/
+f4se_plugin/out/

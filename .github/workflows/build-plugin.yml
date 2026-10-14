@@ -1,0 +1,64 @@
+# Builds the Fallout 4 F4SE plugin on a Windows server every time you push.
+# Download the result from the run's "Artifacts" section on GitHub.
+name: Build Fallout 4 plugin
+
+on:
+  push:
+    paths:
+      - "f4se_plugin/**"
+      - ".github/workflows/build-plugin.yml"
+  workflow_dispatch: # adds a "Run workflow" button on the Actions tab
+
+env:
+  # Pinned CommonLibF4 version (supports Fallout 4 runtime 1.11.240).
+  COMMONLIBF4_REPO: https://github.com/libxse/commonlibf4.git
+  COMMONLIBF4_COMMIT: 7c8c6f8a349ac85abf6fc8a7e5a71732d9339954
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: f4se_plugin
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get CommonLibF4
+        shell: bash
+        run: |
+          git clone "$COMMONLIBF4_REPO" lib/commonlibf4
+          git -C lib/commonlibf4 checkout "$COMMONLIBF4_COMMIT"
+          git -C lib/commonlibf4 submodule update --init --recursive
+
+      - uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: latest
+
+      - name: Cache xmake packages
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\.xmake\packages
+          key: xmake-pkgs-${{ hashFiles('f4se_plugin/xmake.lua') }}-${{ env.COMMONLIBF4_COMMIT }}
+
+      - name: Configure
+        run: |
+          xmake repo -u
+          xmake f -y -m releasedbg
+
+      - name: Build
+        run: xmake build -y -v
+
+      - name: Collect output
+        shell: bash
+        run: |
+          mkdir -p out/F4SE/Plugins
+          dll=$(find build -name FO4LuantiBridge.dll | head -1)
+          echo "Built: $dll"
+          cp "$dll" out/F4SE/Plugins/
+          cp "${dll%.dll}.pdb" out/F4SE/Plugins/ 2>/dev/null || true
+          cp FO4LuantiBridge.ini out/F4SE/Plugins/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FO4LuantiBridge
+          path: f4se_plugin/out
